@@ -45,6 +45,7 @@ INSTALLED_APPS = [
     'cinematch',
     'users',
     'authentication',
+    'movies',
 ]
 
 MIDDLEWARE = [
