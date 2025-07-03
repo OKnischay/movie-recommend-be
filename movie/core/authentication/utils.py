@@ -10,7 +10,7 @@ def generate_access_token(user: User):
         "email": user.email,
         "role": user.role,
         "iat": timezone.now(),
-        "exp": timezone.now() + timezone.timedelta(minutes=5),
+        "exp": timezone.now() + timezone.timedelta(days=1),
         "type": "access",
     }
     return jwt.encode(payload, settings.SECRET_KEY, algorithm="HS256")
