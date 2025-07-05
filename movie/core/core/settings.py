@@ -24,6 +24,7 @@ from environs import Env
 env = Env()
 env.read_env()
 SECRET_KEY = env("SECRET_KEY")
+TMDB_API_KEY = env("TMDB_API_KEY")
 # SECRET_KEY = 'django-insecure-boxfenzz#mtrwa3ef3rm_qc^enln@u**h5$un%0u_#&ema2vkp'
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True

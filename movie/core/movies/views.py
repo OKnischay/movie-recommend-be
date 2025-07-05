@@ -167,6 +167,20 @@ from django.db.models import Q
 from .models import Movie, Genre, UserRating, UserPreference, Watchlist, WatchHistory, Favorite
 from .serializers import FavoriteSerializer, MovieSerializer, GenreSerializer, UserRatingSerializer, UserPreferenceSerializer
 from .services import RecommendationService
+from .tmdb_utils import sync_movie_by_tmdb_id
+
+@api_view(['POST'])
+def import_tmdb_movie_view(request):
+    tmdb_id = request.data.get("tmdb_id")
+    if not tmdb_id:
+        return Response({"error": "tmdb_id is required"}, status=400)
+    
+    movie = sync_movie_by_tmdb_id(tmdb_id)
+    if not movie:
+        return Response({"error": "Failed to fetch movie"}, status=500)
+
+    serializer = MovieSerializer(movie, context={'request': request})
+    return Response(serializer.data, status=201)
 
 class MoviePagination(PageNumberPagination):
     page_size = 20
