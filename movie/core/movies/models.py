@@ -20,6 +20,10 @@ class Movie(models.Model):
     trailer_url = models.URLField(blank=True, null=True)
     imdb_id = models.CharField(max_length=20, blank=True, null=True)
     tmdb_id = models.IntegerField(blank=True, null=True)
+
+    poster_path = models.CharField(max_length=255, blank=True, null=True)
+    backdrop_path = models.CharField(max_length=255, blank=True, null=True)
+
     
     # Movie metadata
     director = models.CharField(max_length=200, blank=True)
@@ -55,12 +59,10 @@ class Movie(models.Model):
 class UserRating(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='ratings')
     movie = models.ForeignKey(Movie, on_delete=models.CASCADE, related_name='user_ratings')
-    rating = models.DecimalField(
-        max_digits=2, 
-        decimal_places=1,
-        validators=[MinValueValidator(0.5), MaxValueValidator(5.0)]
+    rating = models.PositiveIntegerField(
+        validators=[MinValueValidator(0), MaxValueValidator(10)]
     )
-    review = models.TextField(blank=True)
+    # review = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     

@@ -17,6 +17,29 @@ LARGE_IMAGE_BASE_URL = "https://image.tmdb.org/t/p/w780"
 # Rate limiting
 RATE_LIMIT_DELAY = 0.25  # 4 requests per second (TMDB limit is 40/10 seconds)
 
+TMDB_GENRE_MAP = {
+    28: "Action",
+    12: "Adventure",
+    16: "Animation",
+    35: "Comedy",
+    80: "Crime",
+    99: "Documentary",
+    18: "Drama",
+    10751: "Family",
+    14: "Fantasy",
+    36: "History",
+    27: "Horror",
+    10402: "Music",
+    9648: "Mystery",
+    10749: "Romance",
+    878: "Science Fiction",
+    10770: "TV Movie",
+    53: "Thriller",
+    10752: "War",
+    37: "Western"
+}
+
+
 def get_tmdb_headers():
     """Get headers for TMDB API requests"""
     return {
@@ -214,6 +237,8 @@ def sync_movie_by_tmdb_id(tmdb_id):
                 "duration": details.get("runtime", 0),
                 "poster_url": poster_url,
                 "trailer_url": trailer_url,
+                "poster_path": details.get("poster_path"),      
+                "backdrop_path": details.get("backdrop_path"), 
                 "imdb_id": details.get("imdb_id", ""),
                 "director": director,
                 "cast": cast,
