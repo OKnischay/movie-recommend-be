@@ -36,6 +36,35 @@ class MovieSerializer(serializers.ModelSerializer):
             return Watchlist.objects.filter(user=user, movie=obj).exists()
         return False
 
+class RecommendMovieSerializer(serializers.ModelSerializer):
+    genres = GenreSerializer(many=True, read_only=True)
+    user_rating = serializers.SerializerMethodField()
+    is_in_watchlist = serializers.SerializerMethodField()
+    is_favorite = serializers.SerializerMethodField()
+    poster_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Movie
+        fields = [
+            'id', 'title', 'description', 'release_date', 'duration',
+            'poster_url', 'trailer_url', 'director', 'cast', 'genres',
+            'average_rating', 'rating_count', 'user_rating', 'is_in_watchlist',
+            'poster_path', 'backdrop_path', 'imdb_id', 'tmdb_id', 'is_favorite',
+        ]
+
+    def get_is_in_watchlist(self, obj):
+        return getattr(obj, '_is_in_watchlist', False)
+
+    def get_is_favorite(self, obj):
+        return getattr(obj, '_is_favorite', False)
+
+    def get_user_rating(self, obj):
+        return getattr(obj, '_user_rating', None)
+
+    def get_poster_url(self, obj):
+        if obj.poster_path:
+            return f"https://image.tmdb.org/t/p/w500{obj.poster_path}"
+        return None
 
 class UserRatingSerializer(serializers.ModelSerializer):
     movie = MovieSerializer(read_only=True)
