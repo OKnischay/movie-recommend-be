@@ -28,3 +28,9 @@ class CustomUserManager(BaseUserManager):
             raise ValueError("Superuser must have is_superuser=True.")
 
         return self.create_user(email, username, password, **extra_fields)
+    
+    def with_deleted(self):
+        return super().get_queryset()
+    
+    def deleted_only(self):
+        return super().get_queryset().filter(is_deleted=True)
