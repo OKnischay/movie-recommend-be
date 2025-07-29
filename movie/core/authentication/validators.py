@@ -7,11 +7,17 @@ def validate_login(attrs):
 
     user = User.objects.filter(email=email).first()
 
-    if not user:
-            raise serializers.ValidationError("Invalid crendentials.")
+    # if not user:
+    #         raise serializers.ValidationError("Invalid crendentials.")
 
+    if not user or getattr(user, 'is_deleted', False):
+        raise serializers.ValidationError("Invalid credentials")
+    
     if not user.check_password(password):
             raise serializers.ValidationError("Invalid password.")
+    
+    if not user.is_active:
+        raise serializers.ValidationError("Account is inactive")
 
     attrs["user"] = user
     return attrs

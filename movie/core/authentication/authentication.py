@@ -21,6 +21,9 @@ class JWTAuthentication(authentication.BaseAuthentication):
 
             user = User.objects.get(id=payload["id"])
 
+            if getattr(user, 'is_deleted', False):
+                raise exceptions.AuthenticationFailed("Account has been deactivated")
+
         except jwt.ExpiredSignatureError:
             raise exceptions.AuthenticationFailed("Token has expired")
         except jwt.DecodeError:
