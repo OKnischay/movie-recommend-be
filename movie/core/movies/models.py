@@ -87,6 +87,9 @@ class UserPreference(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    def __str__(self):
+        return f"{self.user.username}'s preferences"
+
 class Watchlist(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='watchlist')
     movie = models.ForeignKey(Movie, on_delete=models.CASCADE)
@@ -95,14 +98,24 @@ class Watchlist(models.Model):
     class Meta:
         unique_together = ('user', 'movie')
 
+    def __str__(self):
+        return f"{self.user.username}'s watchlist: {self.movie.title} (added {self.added_at.strftime('%Y-%m-%d')})"
+
+
+
 class WatchHistory(models.Model):
+    """
+    Records user watching trailers for movies.
+    Assumes completion_percentage refers to trailer watched percentage.
+    """
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='watch_history')
     movie = models.ForeignKey(Movie, on_delete=models.CASCADE)
     watched_at = models.DateTimeField(auto_now_add=True)
     completion_percentage = models.FloatField(default=100.0)
-    
+
     class Meta:
         unique_together = ('user', 'movie')
+
 
 class Favorite(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='favorites')
@@ -115,3 +128,17 @@ class Favorite(models.Model):
 
     def __str__(self):
         return f"{self.user.username}'s favorite: {self.movie.title}"
+    
+
+class UserReview(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='reviews')
+    movie = models.ForeignKey(Movie, on_delete=models.CASCADE, related_name='user_reviews')
+    comment = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('user', 'movie')  # Optional: one review per user per movie
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"Review by {self.user.username} on {self.movie.title}"
