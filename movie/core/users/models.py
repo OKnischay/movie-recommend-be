@@ -80,6 +80,8 @@ class CustomUser(AbstractBaseUser, PermissionsMixin, BaseModel, SoftDeleteModel)
     # System fields
     date_joined = models.DateTimeField(default=timezone.now)
     # is_active = models.BooleanField(default=True)
+    last_login = models.DateTimeField(blank=True, null=True)
+
     is_staff = models.BooleanField(default=False)  # set True only for admins
 
     objects = CustomUserManager()
