@@ -291,9 +291,54 @@ def bulk_import_popular_movies(pages=5, skip_existing=False, batch_size=10):
     logger.info(f"Bulk import completed: {imported_count} imported, {failed_count} failed")
     return {"imported": imported_count, "failed": failed_count}
 
-def search_and_import_movie(query):
+# def search_and_import_movie(query, skip_existing=False):
+#     """
+#     Search for a movie and import the first result
+#     """
+#     try:
+#         search_results = search_movies(query)
+#         results = search_results.get("results", [])
+        
+#         if not results:
+#             return {'movie': None, 'message': "No movies found"}
+
+#         first_result = results[0]
+#         tmdb_id = first_result.get("id")
+
+#         if Movie.objects.filter(tmdb_id=tmdb_id).exists():
+#             movie = Movie.objects.get(tmdb_id=tmdb_id)
+#             return {
+#                 'movie': movie,
+#                 'existing': True,
+#                 'message': "Movie already exists in database"
+#             } if skip_existing else {
+#                 'movie': sync_movie_by_tmdb_id(tmdb_id),
+#                 'existing': True,
+#                 'message': "Movie reimported successfully"
+#             }
+
+#         movie = sync_movie_by_tmdb_id(tmdb_id)
+#         if movie:
+#             return {
+#                 'movie': movie,
+#                 'existing': False,
+#                 'message': "Movie imported successfully"
+#             }
+#         else:
+#             return {'movie': None, 'message': "Failed to import movie"}
+
+#     except Exception as e:
+#         return {'movie': None, 'message': str(e)}
+
+            
+#     except Exception as e:
+#         logger.error(f"Error searching and importing movie '{query}': {str(e)}")
+#         return None, f"Error: {str(e)}"
+
+def search_and_import_movie(query, skip_existing=False):
     """
     Search for a movie and import the first result
+    Returns: (movie object, message string)
     """
     try:
         search_results = search_movies(query)
@@ -301,20 +346,24 @@ def search_and_import_movie(query):
         
         if not results:
             return None, "No movies found"
-        
+
         first_result = results[0]
         tmdb_id = first_result.get("id")
-        
+
         if Movie.objects.filter(tmdb_id=tmdb_id).exists():
             movie = Movie.objects.get(tmdb_id=tmdb_id)
-            return movie, "Movie already exists in database"
-        
+            if skip_existing:
+                return movie, "Movie already exists in database"
+            else:
+                updated_movie = sync_movie_by_tmdb_id(tmdb_id)
+                return updated_movie, "Movie reimported successfully"
+
         movie = sync_movie_by_tmdb_id(tmdb_id)
         if movie:
             return movie, "Movie imported successfully"
         else:
             return None, "Failed to import movie"
-            
+
     except Exception as e:
         logger.error(f"Error searching and importing movie '{query}': {str(e)}")
         return None, f"Error: {str(e)}"

@@ -8,10 +8,10 @@ from django.db.models import Q
 from django.core.cache import cache
 
 from users.models import CustomUser
-from .models import Movie, Genre, UserRating, UserPreference, Watchlist, WatchHistory, Favorite
+from .models import Movie, Genre, UserRating, UserPreference, UserReview, Watchlist, WatchHistory, Favorite
 from .serializers import (
-    FavoriteMovieDetailSerializer, FavoriteSerializer, MovieSerializer, GenreSerializer, 
-    UserRatingSerializer, UserPreferenceSerializer, WatchlistSerializer
+    FavoriteMovieDetailSerializer, FavoriteSerializer, MovieSerializer, GenreSerializer, RecommendMovieSerializer, 
+    UserRatingSerializer, UserPreferenceSerializer, UserReviewSerializer, WatchHistorySerializer, WatchlistSerializer
 )
 from .services import RecommendationService
 from .tmdb_utils import (
@@ -89,7 +89,7 @@ def search_tmdb_movies_view(request):
         return Response({"error": "Failed to search movies"}, status=500)
     
 @api_view(['POST'])
-@permission_classes([permissions.IsAuthenticated])
+# @permission_classes([permissions.IsAuthenticated])
 def search_and_import_view(request):
     """Search for a movie and import the first result"""
     query = request.data.get('query', '').strip()
@@ -210,6 +210,7 @@ class GenreListView(generics.ListAPIView):
             cache.set(cache_key, list(queryset), 3600)
             return queryset
         return cached_genres
+ 
 
 @api_view(['GET'])
 def recommendations_view(request):
@@ -217,17 +218,53 @@ def recommendations_view(request):
     try:
         user = request.user if request.user.is_authenticated else None
         limit = int(request.query_params.get('limit', 20))
-        
+
         service = RecommendationService(user)
         recommendations = service.get_recommendations(limit=limit)
-        
-        serializer = MovieSerializer(recommendations, many=True, context={'request': request})
+
+        synced_movies = []
+
+        for item in recommendations:
+            if isinstance(item, Movie):
+                synced_movies.append(item)
+                continue
+
+            tmdb_id = item.get("id")
+            if not tmdb_id:
+                continue
+
+            movie = Movie.objects.filter(tmdb_id=tmdb_id).first()
+            if not movie:
+                movie = sync_movie_by_tmdb_id(tmdb_id)
+
+            if movie:
+                synced_movies.append(movie)
+
+        # Batch user-specific data
+        if user:
+            watchlist_ids = set(
+                Watchlist.objects.filter(user=user, movie__in=synced_movies).values_list("movie_id", flat=True)
+            )
+            favorite_ids = set(
+                Favorite.objects.filter(user=user, movie__in=synced_movies).values_list("movie_id", flat=True)
+            )
+            ratings = {
+                r.movie_id: r.rating
+                for r in UserRating.objects.filter(user=user, movie__in=synced_movies)
+            }
+
+            for movie in synced_movies:
+                movie._is_in_watchlist = movie.id in watchlist_ids
+                movie._is_favorite = movie.id in favorite_ids
+                movie._user_rating = ratings.get(movie.id)
+
+        serializer = RecommendMovieSerializer(synced_movies, many=True, context={'request': request})
         return Response(serializer.data)
-        
+
     except Exception as e:
         logger.error(f"Error getting recommendations: {str(e)}")
         return Response({"error": "Failed to get recommendations"}, status=500)
-    
+
 @api_view(['GET'])
 def movie_by_tmdb_id_view(request, tmdb_id):
     try:
@@ -280,13 +317,13 @@ def trending_movies_view(request):
         return Response({"error": "Failed to get trending movies"}, status=500)
 
 @api_view(['GET'])
-def similar_movies_view(request, movie_id):
+def similar_movies_view(request, tmdb_id):
     """Get movies similar to a specific movie"""
     try:
         limit = int(request.query_params.get('limit', 10))
         
         service = RecommendationService(request.user if request.user.is_authenticated else None)
-        similar = service.get_similar_movies(movie_id, limit=limit)
+        similar = service.get_similar_movies(tmdb_id, limit=limit)
         
         serializer = MovieSerializer(similar, many=True, context={'request': request})
         return Response(serializer.data)
@@ -394,6 +431,27 @@ def watchlist_status_view(request):
     
     return Response({'is_in_watchlist': is_in_watchlist}, status=status.HTTP_200_OK)
 
+# @api_view(['GET'])
+# @permission_classes([permissions.IsAuthenticated])
+# def user_watchlist_view(request):
+#     """Get all watchlist for current user"""
+#     print("Authenticated user:", request.user)
+#     watchlist = Watchlist.objects.filter(user=request.user).select_related('movie')
+#     print("Found watchlist items:", watchlist.count())
+#     serializer = WatchlistSerializer(watchlist, many=True)
+#     return Response(serializer.data)
+
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
+def user_watchlist_view(request):
+    """Get all watchlist for current user"""
+    print("Authenticated user:", request.user)
+    watchlist = Watchlist.objects.filter(user=request.user).select_related('movie')
+    print("Found watchlist items:", watchlist.count())
+    serializer = WatchlistSerializer(watchlist, many=True, context={'request': request})
+    return Response(serializer.data)
+
+
 
 @api_view(['POST', 'DELETE'])
 @permission_classes([permissions.IsAuthenticated])
@@ -461,5 +519,201 @@ class UserWatchlistAPIView(APIView):
     def get(self, request, user_id):
         user = get_object_or_404(CustomUser, id=user_id)
         watchlist = Watchlist.objects.filter(user=user)
-        serializer = WatchlistSerializer(watchlist, many=True, context={"request": request})  # ✅ FIXED
+        serializer = WatchlistSerializer(watchlist, many=True, context={"request": request}) 
         return Response(serializer.data)
+
+
+# @api_view(['POST'])
+# @permission_classes([permissions.IsAuthenticated])
+# def add_to_watch_history(request, tmdb_id):
+#     try:
+#         movie = Movie.objects.get(tmdb_id=tmdb_id)
+#     except Movie.DoesNotExist:
+#         return Response({'error': 'Movie not found'}, status=status.HTTP_404_NOT_FOUND)
+    
+#     completion_percentage = request.data.get("completion_percentage", 100)
+
+#     obj, created = WatchHistory.objects.update_or_create(
+#         user=request.user,
+#         movie=movie,
+#         defaults={"completion_percentage": completion_percentage}
+#     )
+
+#     return Response({
+#         "message": "Watch history updated" if not created else "Watch history added",
+#         "completion_percentage": obj.completion_percentage
+#     }, status=status.HTTP_200_OK)
+
+# class WatchHistoryListView(generics.ListAPIView):
+#     serializer_class = WatchHistorySerializer
+#     permission_classes = [permissions.IsAuthenticated]
+
+#     def get_queryset(self):
+#         return WatchHistory.objects.filter(user=self.request.user).select_related('movie').order_by('-watched_at')
+
+
+# class WatchHistoryDetailView(generics.RetrieveUpdateDestroyAPIView):
+#     serializer_class = WatchHistorySerializer
+#     permission_classes = [permissions.IsAuthenticated]
+
+#     def get_queryset(self):
+#         return WatchHistory.objects.filter(user=self.request.user)
+
+@api_view(['POST', 'PATCH', 'DELETE'])
+@permission_classes([permissions.IsAuthenticated])
+def watch_history_by_tmdb(request, tmdb_id):
+    try:
+        movie = Movie.objects.get(tmdb_id=tmdb_id)
+    except Movie.DoesNotExist:
+        return Response({'error': 'Movie not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    user = request.user
+
+    if request.method == 'POST':
+        completion_percentage = request.data.get("completion_percentage", 100)
+        obj, created = WatchHistory.objects.update_or_create(
+            user=user,
+            movie=movie,
+            defaults={"completion_percentage": completion_percentage}
+        )
+        return Response({
+            "message": "Watch history updated" if not created else "Watch history added",
+            "completion_percentage": obj.completion_percentage
+        }, status=status.HTTP_200_OK)
+
+    elif request.method == 'PATCH':
+        try:
+            watch_entry = WatchHistory.objects.get(user=user, movie=movie)
+        except WatchHistory.DoesNotExist:
+            return Response({'error': 'Watch history not found'}, status=status.HTTP_400_BAD_REQUEST)
+
+        completion_percentage = request.data.get("completion_percentage", 100)
+        watch_entry.completion_percentage = completion_percentage
+        watch_entry.save()
+        return Response({
+            "message": "Watch history updated",
+            "completion_percentage": watch_entry.completion_percentage
+        }, status=status.HTTP_200_OK)
+
+    elif request.method == 'DELETE':
+        try:
+            watch_entry = WatchHistory.objects.get(user=user, movie=movie)
+            watch_entry.delete()
+            return Response({"message": "Watch history deleted"}, status=status.HTTP_200_OK)
+        except WatchHistory.DoesNotExist:
+            return Response({'error': 'Watch history not found'}, status=status.HTTP_400_BAD_REQUEST)
+        
+
+# @api_view(['GET'])
+# @permission_classes([permissions.IsAuthenticated])
+# def watchhistory_list(request):
+#     queryset = WatchHistory.objects.filter(user=request.user).select_related('movie').order_by('-watched_at')
+#     serializer = WatchHistorySerializer(queryset, many=True),
+#     return Response(serializer.data)
+
+
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
+def watchhistory_list(request):
+    queryset = WatchHistory.objects.filter(user=request.user).select_related('movie').order_by('-watched_at')
+    serializer = WatchHistorySerializer(queryset, many=True, context={'request': request})
+    return Response(serializer.data)
+
+
+def get_movie(movie_id):
+    try:
+        return Movie.objects.get(tmdb_id=movie_id)
+    except Movie.DoesNotExist:
+        try:
+            return Movie.objects.get(id=movie_id)
+        except Movie.DoesNotExist:
+            return None
+
+@api_view(['GET', 'POST'])
+@permission_classes([permissions.IsAuthenticated])
+def movie_reviews(request, tmdb_id):
+    movie = get_movie(tmdb_id)
+    if not movie:
+        return Response({'detail': 'Movie not found'}, status=status.HTTP_400_BAD_REQUEST)
+    
+    if request.method == 'GET':
+        reviews = UserReview.objects.filter(movie=movie).select_related('user', 'movie').order_by('-created_at')
+        serializer = UserReviewSerializer(reviews, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    
+    elif request.method == 'POST':
+        if UserReview.objects.filter(user=request.user, movie=movie).exists():
+            return Response({'detail': 'You have already reviewed this movie'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        serializer = UserReviewSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save(user=request.user, movie=movie)
+            # Changed from 201 to 200 per your request
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(['GET'])
+def movie_reviews_public(request, tmdb_id):
+    movie = get_movie(tmdb_id)
+    if not movie:
+        return Response({'detail': 'Movie not found'}, status=status.HTTP_400_BAD_REQUEST)
+    
+    reviews = UserReview.objects.filter(movie=movie).select_related('user', 'movie').order_by('-created_at')
+    serializer = UserReviewSerializer(reviews, many=True)
+    return Response(serializer.data, status=status.HTTP_200_OK)
+
+# @api_view(['GET'])
+# @permission_classes([permissions.IsAuthenticated])
+# def user_movie_review(request, tmdb_id):
+#     movie = get_movie(tmdb_id)
+#     if not movie:
+#         return Response({'detail': 'Movie not found'}, status=status.HTTP_400_BAD_REQUEST)
+    
+#     try:
+#         review = UserReview.objects.get(user=request.user, movie=movie)
+#     except UserReview.DoesNotExist:
+#         return Response({'detail': 'Review not found'}, status=status.HTTP_400_BAD_REQUEST)
+    
+#     serializer = UserReviewSerializer(review)
+#     return Response(serializer.data, status=status.HTTP_200_OK)
+
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
+def user_movie_review(request, tmdb_id):
+    movie = get_movie(tmdb_id)
+    if not movie:
+        return Response({'detail': 'Movie not found'}, status=status.HTTP_400_BAD_REQUEST)
+    
+    try:
+        review = UserReview.objects.get(user=request.user, movie=movie)
+        serializer = UserReviewSerializer(review)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    except UserReview.DoesNotExist:
+        # Return empty JSON object instead of error
+        return Response({}, status=status.HTTP_200_OK)
+
+@api_view(['GET', 'PUT', 'PATCH', 'DELETE'])
+@permission_classes([permissions.IsAuthenticated])
+def review_detail(request, pk):
+    try:
+        review = UserReview.objects.get(pk=pk, user=request.user)
+    except UserReview.DoesNotExist:
+        return Response({'detail': 'Review not found'}, status=status.HTTP_400_BAD_REQUEST)
+    
+    if request.method == 'GET':
+        serializer = UserReviewSerializer(review)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    
+    elif request.method in ['PUT', 'PATCH']:
+        partial = request.method == 'PATCH'
+        serializer = UserReviewSerializer(review, data=request.data, partial=partial)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    elif request.method == 'DELETE':
+        review.delete()
+        return Response({'detail': 'Review deleted successfully'}, status=status.HTTP_200_OK)
+
+

@@ -2,7 +2,7 @@
 from rest_framework import serializers
 
 from movies.tmdb_utils import sync_movie_by_tmdb_id
-from .models import Favorite, Movie, Genre, UserRating, UserPreference, Watchlist, WatchHistory
+from .models import Favorite, Movie, Genre, UserRating, UserPreference, UserReview, Watchlist, WatchHistory
 
 class GenreSerializer(serializers.ModelSerializer):
     class Meta:
@@ -84,37 +84,7 @@ class UserRatingSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("TMDB ID is required.")
         return value
 
-    # def create(self, validated_data):
-    #     print(f"Creating rating with validated_data: {validated_data}")
-    #     request = self.context['request']
-    #     user = request.user
-    #     tmdb_id = validated_data.pop('tmdb_id')
-        
-    #     # Check if movie exists or import it
-    #     movie = Movie.objects.filter(tmdb_id=tmdb_id).first()
-    #     if not movie:
-    #         try:
-    #             movie = sync_movie_by_tmdb_id(tmdb_id)
-    #             if not movie:
-    #                 raise serializers.ValidationError("Could not fetch movie from TMDB.")
-    #         except Exception as e:
-    #             print(f"Error syncing movie: {e}")
-    #             raise serializers.ValidationError(f"Error fetching movie: {str(e)}")
-
-    #     # Check if user already rated this movie
-    #     existing_rating = UserRating.objects.filter(user=user, movie=movie).first()
-    #     if existing_rating:
-    #         raise serializers.ValidationError("You have already rated this movie.")
-
-    #     try:
-    #         return UserRating.objects.create(
-    #             user=user,
-    #             movie=movie,
-    #             rating=validated_data['rating']
-    #         )
-    #     except Exception as e:
-    #         print(f"Error creating rating: {e}")
-    #         raise serializers.ValidationError(f"Error creating rating: {str(e)}")
+   
     def create(self, validated_data):
         print(f"Creating rating with validated_data: {validated_data}")
         request = self.context['request']
@@ -195,3 +165,23 @@ class WatchlistSerializer(serializers.ModelSerializer):
     class Meta:
         model = Watchlist
         fields = ['id','movie', 'user']
+
+class WatchHistorySerializer(serializers.ModelSerializer):
+    movie = MovieSerializer(read_only=True) 
+    tmdb_id = serializers.IntegerField(source='movie.tmdb_id', read_only=True)
+    class Meta:
+        model = WatchHistory
+        fields = ['id', 'user', 'movie', 'tmdb_id','watched_at', 'completion_percentage']
+        read_only_fields = ['id', 'user','tmdb_id', 'watched_at']
+
+
+class UserReviewSerializer(serializers.ModelSerializer):
+    user_name = serializers.CharField(source='user.username', read_only=True)
+    user_id = serializers.IntegerField(source='user.id', read_only=True)
+    movie_title = serializers.CharField(source='movie.title', read_only=True)
+    
+    class Meta:
+        model = UserReview
+        fields = ['id', 'user_id', 'user_name', 'movie', 'movie_title', 
+                 'comment', 'created_at']
+        read_only_fields = ['id', 'user_id', 'movie','user_name', 'movie_title', 'created_at']
